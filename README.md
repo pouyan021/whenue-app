@@ -58,9 +58,10 @@ src/
 - **No auth.** whenue-api has none yet, so anyone with a visit id can submit. The
   deep link should carry a signed, expiring token once the API supports it
   (`NotificationTemplate.linkExpiration` already hints at this).
-- **Upload target.** vidEngine's `/upload` currently returns an empty output file and
-  transcodes synchronously. The client only depends on the multipart `video` field
-  and a `download_url` in the response, so it can switch to a signed GCS upload URL
-  from whenue-api without changing the screens.
+- **Upload target.** vidEngine's `/upload` transcodes to MP4 (audio copied) but
+  responds only after encoding finishes, so long clips keep the request open. The
+  client only depends on the multipart `video` field and a `download_url` in the
+  response, so it can switch to a signed GCS upload URL from whenue-api without
+  changing the screens.
 - **Types are hand-written** in `src/graphql/operations.ts`. Add graphql-codegen
   once the schema is published.
