@@ -8,7 +8,7 @@ import { Button, ErrorText, Screen, typography } from '@/components/ui';
 import { config } from '@/lib/config';
 
 export default function RecordScreen() {
-  const { visitId } = useLocalSearchParams<{ visitId: string }>();
+  const { token } = useLocalSearchParams<{ token: string }>();
   const cameraRef = useRef<CameraView>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
@@ -66,7 +66,7 @@ export default function RecordScreen() {
         maxFileSize: config.maxUploadBytes,
       });
       if (video?.uri) {
-        router.replace({ pathname: '/visit/[visitId]/review', params: { visitId, uri: video.uri } });
+        router.replace({ pathname: '/visit/[token]/review', params: { token, uri: video.uri } });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Recording failed.');
@@ -84,6 +84,8 @@ export default function RecordScreen() {
         style={StyleSheet.absoluteFill}
         facing={facing}
         mode="video"
+        // Enough for a testimony and keeps uploads small; vidEngine encodes 720p anyway
+        videoQuality="720p"
         onCameraReady={() => setReady(true)}
         onMountError={(e) => setError(e.message)}
       />

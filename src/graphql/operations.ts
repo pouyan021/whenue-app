@@ -18,12 +18,12 @@ export type VisitForTestimony = {
   testimonial: { id: string; status: TestimonialStatus } | null;
 };
 
-export const VISIT_FOR_TESTIMONY: TypedDocumentNode<
-  { visit: VisitForTestimony | null },
-  { id: string }
+export const VISIT_BY_TOKEN: TypedDocumentNode<
+  { visitByToken: VisitForTestimony | null },
+  { token: string }
 > = gql`
-  query VisitForTestimony($id: ID!) {
-    visit(id: $id) {
+  query VisitByToken($token: String!) {
+    visitByToken(token: $token) {
       id
       visitDate
       user {
@@ -51,9 +51,79 @@ export const VISIT_FOR_TESTIMONY: TypedDocumentNode<
   }
 `;
 
+export type VideoStatus = 'UPLOADING' | 'UPLOADED' | 'QUEUED' | 'READY' | 'FAILED';
+
+export type VideoUploadPart = { partNumber: number; url: string; expiresAt: string };
+
+export const START_VIDEO_UPLOAD: TypedDocumentNode<
+  {
+    startVideoUpload: {
+      video: { id: string; status: VideoStatus };
+      partSize: number;
+      parts: VideoUploadPart[];
+    };
+  },
+  { input: { visitToken: string; contentType: string; sizeBytes: number } }
+> = gql`
+  mutation StartVideoUpload($input: StartVideoUploadInput!) {
+    startVideoUpload(input: $input) {
+      video {
+        id
+        status
+      }
+      partSize
+      parts {
+        partNumber
+        url
+        expiresAt
+      }
+    }
+  }
+`;
+
+export const REFRESH_VIDEO_UPLOAD_PARTS: TypedDocumentNode<
+  { refreshVideoUploadParts: VideoUploadPart[] },
+  { visitToken: string; videoId: string; partNumbers: number[] }
+> = gql`
+  mutation RefreshVideoUploadParts($visitToken: String!, $videoId: ID!, $partNumbers: [Int!]!) {
+    refreshVideoUploadParts(visitToken: $visitToken, videoId: $videoId, partNumbers: $partNumbers) {
+      partNumber
+      url
+      expiresAt
+    }
+  }
+`;
+
+export const COMPLETE_VIDEO_UPLOAD: TypedDocumentNode<
+  { completeVideoUpload: { id: string; status: VideoStatus } },
+  {
+    input: {
+      visitToken: string;
+      videoId: string;
+      parts: { partNumber: number; etag: string }[];
+    };
+  }
+> = gql`
+  mutation CompleteVideoUpload($input: CompleteVideoUploadInput!) {
+    completeVideoUpload(input: $input) {
+      id
+      status
+    }
+  }
+`;
+
+export const ABORT_VIDEO_UPLOAD: TypedDocumentNode<
+  { abortVideoUpload: boolean },
+  { visitToken: string; videoId: string }
+> = gql`
+  mutation AbortVideoUpload($visitToken: String!, $videoId: ID!) {
+    abortVideoUpload(visitToken: $visitToken, videoId: $videoId)
+  }
+`;
+
 export type CreateTestimonialInput = {
-  visitId: string;
-  videoUrl: string;
+  visitToken: string;
+  videoId: string;
   rating?: number | null;
   text?: string | null;
 };
