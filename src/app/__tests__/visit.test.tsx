@@ -1,13 +1,14 @@
+import { GraphQLError } from 'graphql';
 import { MockedProvider } from '@apollo/client/testing/react';
 import { render, screen } from '@testing-library/react-native';
 
-import { VISIT_FOR_TESTIMONY, type VisitForTestimony } from '@/graphql/operations';
+import { VISIT_BY_TOKEN, type VisitForTestimony } from '@/graphql/operations';
 
-import VisitScreen from '../visit/[visitId]/index';
+import VisitScreen from '../visit/[token]/index';
 
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn() },
-  useLocalSearchParams: () => ({ visitId: '42' }),
+  useLocalSearchParams: () => ({ token: 'tok' }),
 }));
 
 const baseVisit: VisitForTestimony = {
@@ -26,7 +27,9 @@ const baseVisit: VisitForTestimony = {
 function renderWith(visit: VisitForTestimony | null) {
   return render(
     <MockedProvider
-      mocks={[{ request: { query: VISIT_FOR_TESTIMONY, variables: { id: '42' } }, result: { data: { visit } } }]}
+      mocks={[
+        { request: { query: VISIT_BY_TOKEN, variables: { token: 'tok' } }, result: { data: { visitByToken: visit } } },
+      ]}
     >
       <VisitScreen />
     </MockedProvider>,
@@ -47,8 +50,24 @@ describe('VisitScreen', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('handles unknown visit codes', async () => {
+  it('handles unknown visits', async () => {
     await renderWith(null);
     expect(await screen.findByText('Visit not found')).toBeOnTheScreen();
+  });
+
+  it('explains expired links', async () => {
+    await render(
+      <MockedProvider
+        mocks={[
+          {
+            request: { query: VISIT_BY_TOKEN, variables: { token: 'tok' } },
+            result: { errors: [new GraphQLError('Invalid or expired visit token')] },
+          },
+        ]}
+      >
+        <VisitScreen />
+      </MockedProvider>,
+    );
+    expect(await screen.findByText('This link has expired')).toBeOnTheScreen();
   });
 });

@@ -2,36 +2,44 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, Text, TextInput } from 'react-native';
 
-import { Button, colors, Screen, typography } from '@/components/ui';
+import { Button, colors, ErrorText, Screen, typography } from '@/components/ui';
+import { parseVisitToken } from '@/lib/visitLink';
 
 /**
  * Entry point when the app is opened without a deep link. Visitors normally
- * arrive via whenue://visit/<id> from a venue's notification; this screen lets
- * them type the code from that message instead.
+ * arrive via whenue://visit/<token> from a venue's notification; this screen lets
+ * them paste that link instead.
  */
 export default function HomeScreen() {
-  const [visitId, setVisitId] = useState('');
-  const trimmed = visitId.trim();
+  const [link, setLink] = useState('');
+  const [invalid, setInvalid] = useState(false);
+
+  function open() {
+    const token = parseVisitToken(link);
+    setInvalid(!token);
+    if (token) router.push({ pathname: '/visit/[token]', params: { token } });
+  }
 
   return (
     <Screen>
       <Text style={typography.title}>Record a video testimony</Text>
       <Text style={typography.body}>
-        Enter the visit code from the message the venue sent you to get started.
+        Paste the link from the message the venue sent you to get started.
       </Text>
       <TextInput
-        accessibilityLabel="Visit code"
+        accessibilityLabel="Visit link"
         autoCapitalize="none"
         autoCorrect={false}
-        keyboardType="number-pad"
-        onChangeText={setVisitId}
-        onSubmitEditing={() => trimmed && router.push(`/visit/${trimmed}`)}
-        placeholder="Visit code"
+        keyboardType="url"
+        onChangeText={setLink}
+        onSubmitEditing={open}
+        placeholder="Visit link"
         returnKeyType="go"
         style={styles.input}
-        value={visitId}
+        value={link}
       />
-      <Button title="Continue" disabled={!trimmed} onPress={() => router.push(`/visit/${trimmed}`)} />
+      {invalid && <ErrorText>That doesn’t look like a visit link. Copy the whole link from the message.</ErrorText>}
+      <Button title="Continue" disabled={!link.trim()} onPress={open} />
     </Screen>
   );
 }

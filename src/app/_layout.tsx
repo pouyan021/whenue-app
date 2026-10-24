@@ -13,11 +13,11 @@ export default function RootLayout() {
       <StatusBar style="auto" />
       <Stack>
         <Stack.Screen name="index" options={{ title: 'Whenue' }} />
-        <Stack.Screen name="visit/[visitId]/index" options={{ title: 'Share your experience' }} />
-        <Stack.Screen name="visit/[visitId]/record" options={{ headerShown: false }} />
-        <Stack.Screen name="visit/[visitId]/review" options={{ title: 'Review' }} />
+        <Stack.Screen name="visit/[token]/index" options={{ title: 'Share your experience' }} />
+        <Stack.Screen name="visit/[token]/record" options={{ headerShown: false }} />
+        <Stack.Screen name="visit/[token]/review" options={{ title: 'Review' }} />
         <Stack.Screen
-          name="visit/[visitId]/done"
+          name="visit/[token]/done"
           options={{ title: 'Thank you', headerBackVisible: false, gestureEnabled: false }}
         />
       </Stack>

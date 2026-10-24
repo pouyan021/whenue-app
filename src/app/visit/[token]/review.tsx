@@ -1,17 +1,20 @@
-import { useMutation } from '@apollo/client/react';
+import { useApolloClient, useMutation } from '@apollo/client/react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Button, colors, ErrorText, typography } from '@/components/ui';
 import { CREATE_TESTIMONIAL } from '@/graphql/operations';
-import { uploadVideo } from '@/lib/upload';
+import { createFileTransport } from '@/lib/fileTransport';
+import { uploadVideo, videoContentType } from '@/lib/upload';
+import { createUploadApi } from '@/lib/uploadApi';
 
 type Phase = { kind: 'editing' } | { kind: 'uploading'; progress: number } | { kind: 'saving' };
 
 export default function ReviewScreen() {
-  const { visitId, uri } = useLocalSearchParams<{ visitId: string; uri: string }>();
+  const { token, uri } = useLocalSearchParams<{ token: string; uri: string }>();
+  const client = useApolloClient();
   const player = useVideoPlayer(uri, (p) => {
     p.loop = true;
   });
@@ -20,6 +23,12 @@ export default function ReviewScreen() {
   const [phase, setPhase] = useState<Phase>({ kind: 'editing' });
   const [error, setError] = useState<string | null>(null);
   const [createTestimonial] = useMutation(CREATE_TESTIMONIAL);
+  // Kept after a successful upload so a failed save is retried without uploading again.
+  const uploadedVideoId = useRef<string | null>(null);
+  const cancel = useRef<AbortController | null>(null);
+
+  // Leaving the screen stops an upload in progress.
+  useEffect(() => () => cancel.current?.abort(), []);
 
   const busy = phase.kind !== 'editing';
 
@@ -27,15 +36,23 @@ export default function ReviewScreen() {
     setError(null);
     try {
       player.pause();
-      setPhase({ kind: 'uploading', progress: 0 });
-      const { videoUrl } = await uploadVideo(uri, {
-        onProgress: (progress) => setPhase({ kind: 'uploading', progress }),
-      });
+      if (!uploadedVideoId.current) {
+        setPhase({ kind: 'uploading', progress: 0 });
+        cancel.current = new AbortController();
+        const { videoId } = await uploadVideo(createUploadApi(client, token), createFileTransport(uri), {
+          contentType: videoContentType(uri),
+          onProgress: (progress) => setPhase({ kind: 'uploading', progress }),
+          signal: cancel.current.signal,
+        });
+        uploadedVideoId.current = videoId;
+      }
       setPhase({ kind: 'saving' });
       await createTestimonial({
-        variables: { input: { visitId, videoUrl, rating, text: text.trim() || null } },
+        variables: {
+          input: { visitToken: token, videoId: uploadedVideoId.current, rating, text: text.trim() || null },
+        },
       });
-      router.replace({ pathname: '/visit/[visitId]/done', params: { visitId } });
+      router.replace({ pathname: '/visit/[token]/done', params: { token } });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
       setPhase({ kind: 'editing' });
@@ -93,7 +110,7 @@ export default function ReviewScreen() {
           title="Record again"
           variant="secondary"
           disabled={busy}
-          onPress={() => router.replace({ pathname: '/visit/[visitId]/record', params: { visitId } })}
+          onPress={() => router.replace({ pathname: '/visit/[token]/record', params: { token } })}
         />
       </ScrollView>
     </KeyboardAvoidingView>

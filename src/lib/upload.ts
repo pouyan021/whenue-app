@@ -1,78 +1,157 @@
+import type { VideoStatus, VideoUploadPart } from '@/graphql/operations';
+
 import { config } from './config';
 
-export type UploadResult = {
-  /** Absolute URL of the stored video, ready to save as Testimonial.videoUrl. */
-  videoUrl: string;
-};
+/**
+ * Multipart upload straight to object storage. whenue-api hands out a presigned URL per
+ * part; each slice of the file is PUT to its URL and the ETag that comes back is reported
+ * to completeVideoUpload. A failed part is retried on its own, so a dropped connection
+ * near the end of a long video doesn't start the whole upload again.
+ */
 
 export class UploadError extends Error {}
 
-type UploadOptions = {
-  uploadUrl?: string;
-  onProgress?: (fraction: number) => void;
-  signal?: AbortSignal;
+/** The part of whenue-api the upload needs. See createUploadApi in uploadApi.ts. */
+export type UploadApi = {
+  start(input: { contentType: string; sizeBytes: number }): Promise<{
+    videoId: string;
+    partSize: number;
+    parts: VideoUploadPart[];
+  }>;
+  refreshParts(videoId: string, partNumbers: number[]): Promise<VideoUploadPart[]>;
+  complete(videoId: string, parts: UploadedPart[]): Promise<{ status: VideoStatus }>;
+  abort(videoId: string): Promise<void>;
 };
 
-/**
- * Uploads a recorded video as multipart/form-data under the "video" field,
- * which is the contract of vidEngine's POST /upload. XMLHttpRequest is used
- * instead of fetch because React Native's fetch doesn't report upload progress.
- */
-export function uploadVideo(fileUri: string, options: UploadOptions = {}): Promise<UploadResult> {
-  const uploadUrl = options.uploadUrl ?? config.uploadUrl;
-  const { name, type } = describeVideoFile(fileUri);
+export type UploadedPart = { partNumber: number; etag: string };
 
-  const form = new FormData();
-  // React Native's FormData accepts a { uri, name, type } descriptor for files.
-  form.append('video', { uri: fileUri, name, type } as unknown as Blob);
+/** Reads and sends slices of the local file. See createFileTransport in fileTransport.ts. */
+export type PartTransport = {
+  size: number;
+  /** PUTs bytes [offset, offset + length) of the file to url and returns the ETag. */
+  put(
+    url: string,
+    offset: number,
+    length: number,
+    onProgress: (bytesSent: number) => void,
+    signal?: AbortSignal,
+  ): Promise<string>;
+};
 
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', uploadUrl);
-    xhr.setRequestHeader('Accept', 'application/json');
-
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && event.total > 0) {
-        options.onProgress?.(event.loaded / event.total);
-      }
-    };
-    xhr.onload = () => {
-      try {
-        resolve(parseUploadResponse(xhr.status, xhr.responseText, uploadUrl));
-      } catch (error) {
-        reject(error);
-      }
-    };
-    xhr.onerror = () => reject(new UploadError('Network error while uploading the video.'));
-    xhr.onabort = () => reject(new UploadError('Upload cancelled.'));
-
-    options.signal?.addEventListener('abort', () => xhr.abort());
-    xhr.send(form);
-  });
-}
-
-export function describeVideoFile(fileUri: string): { name: string; type: string } {
-  const extension = fileUri.split('?')[0].split('.').pop()?.toLowerCase();
-  if (extension === 'mov') {
-    return { name: 'testimony.mov', type: 'video/quicktime' };
+/** A part PUT that storage answered with an error status. */
+export class PartUploadError extends Error {
+  constructor(readonly status: number) {
+    super(`Storage answered ${status}`);
   }
-  return { name: 'testimony.mp4', type: 'video/mp4' };
 }
 
-export function parseUploadResponse(status: number, body: string, uploadUrl: string): UploadResult {
-  let json: { success?: boolean; message?: string; download_url?: string | null } | undefined;
+type UploadOptions = {
+  contentType: string;
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+  attempts?: number;
+  /** Pause before retry number `attempt` (1-based). Replaced in tests. */
+  delay?: (attempt: number) => Promise<void>;
+  now?: () => number;
+};
+
+// Ask for a fresh URL rather than start a PUT this close to expiry.
+const URL_EXPIRY_MARGIN_MS = 60_000;
+
+export async function uploadVideo(
+  api: UploadApi,
+  transport: PartTransport,
+  options: UploadOptions,
+): Promise<{ videoId: string }> {
+  const { signal, onProgress } = options;
+  const attempts = options.attempts ?? config.partAttempts;
+  const delay = options.delay ?? backoff;
+  const now = options.now ?? Date.now;
+  const size = transport.size;
+
+  if (size <= 0) {
+    throw new UploadError('The recording is empty.');
+  }
+  if (size > config.maxUploadBytes) {
+    throw new UploadError('The video is too large to upload.');
+  }
+
+  const started = await api.start({ contentType: options.contentType, sizeBytes: size });
+  const { videoId, partSize } = started;
+  const urls = new Map(started.parts.map((part) => [part.partNumber, part]));
+  const uploaded: UploadedPart[] = [];
+  let sentBefore = 0;
+
   try {
-    json = JSON.parse(body);
-  } catch {
-    // Fall through: handled below.
-  }
+    for (const partNumber of [...urls.keys()].sort((a, b) => a - b)) {
+      const offset = (partNumber - 1) * partSize;
+      const length = Math.min(partSize, size - offset);
 
-  if (status < 200 || status >= 300 || !json || json.success === false) {
-    throw new UploadError(json?.message ?? `Upload failed with status ${status}.`);
+      for (let attempt = 1; ; attempt++) {
+        throwIfAborted(signal);
+        let part = urls.get(partNumber)!;
+        if (Date.parse(part.expiresAt) - now() < URL_EXPIRY_MARGIN_MS) {
+          part = await refresh(api, videoId, partNumber, urls);
+        }
+        try {
+          const etag = await transport.put(
+            part.url,
+            offset,
+            length,
+            (sent) => onProgress?.((sentBefore + Math.min(sent, length)) / size),
+            signal,
+          );
+          uploaded.push({ partNumber, etag });
+          break;
+        } catch (error) {
+          if (signal?.aborted || attempt >= attempts) throw error;
+          // 403 is what storage says when a URL expired in flight
+          if (error instanceof PartUploadError && error.status === 403) {
+            await refresh(api, videoId, partNumber, urls);
+          }
+          await delay(attempt);
+        }
+      }
+      sentBefore += length;
+      onProgress?.(sentBefore / size);
+    }
+
+    throwIfAborted(signal);
+    const video = await api.complete(videoId, uploaded);
+    if (video.status === 'FAILED') {
+      throw new UploadError('The upload was incomplete. Please try again.');
+    }
+    return { videoId };
+  } catch (error) {
+    // Frees the parts in storage; the API ignores an abort of a finished upload anyway.
+    api.abort(videoId).catch(() => {});
+    if (signal?.aborted) throw new UploadError('Upload cancelled.');
+    if (error instanceof UploadError) throw error;
+    throw new UploadError('The upload failed. Check your connection and try again.', { cause: error });
   }
-  if (!json.download_url) {
-    throw new UploadError('Upload succeeded but the server returned no video URL.');
-  }
-  // vidEngine returns a path relative to its own host, e.g. /static/processed/x.mp4.
-  return { videoUrl: new URL(json.download_url, uploadUrl).toString() };
+}
+
+async function refresh(
+  api: UploadApi,
+  videoId: string,
+  partNumber: number,
+  urls: Map<number, VideoUploadPart>,
+): Promise<VideoUploadPart> {
+  const [part] = await api.refreshParts(videoId, [partNumber]);
+  urls.set(partNumber, part);
+  return part;
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw new UploadError('Upload cancelled.');
+}
+
+function backoff(attempt: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** (attempt - 1)));
+}
+
+/** The content type whenue-api expects for a recording, from its file extension. */
+export function videoContentType(fileUri: string): string {
+  const extension = fileUri.split('?')[0].split('.').pop()?.toLowerCase();
+  return extension === 'mov' ? 'video/quicktime' : 'video/mp4';
 }
