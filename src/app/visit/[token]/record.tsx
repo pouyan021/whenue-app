@@ -5,7 +5,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button, ErrorText, Screen, typography } from '@/components/ui';
+import { fa } from '@/i18n/fa';
 import { config } from '@/lib/config';
+import { toPersianDigits } from '@/lib/numbers';
 
 export default function RecordScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -34,22 +36,20 @@ export default function RecordScreen() {
     return (
       <SafeAreaView style={{ flex: 1 }}>
         <Screen>
-          <Text style={typography.title}>Camera and microphone</Text>
-          <Text style={typography.body}>
-            We need access to your camera and microphone to record your testimony.
-          </Text>
+          <Text style={typography.title}>{fa.visit.cameraTitle}</Text>
+          <Text style={typography.body}>{fa.visit.cameraBody}</Text>
           {canAsk ? (
             <Button
-              title="Allow access"
+              title={fa.visit.allow}
               onPress={async () => {
                 if (!cameraPermission.granted) await requestCameraPermission();
                 if (!micPermission.granted) await requestMicPermission();
               }}
             />
           ) : (
-            <ErrorText>Access was denied. Enable it for Whenue in your device settings.</ErrorText>
+            <ErrorText>{fa.visit.denied}</ErrorText>
           )}
-          <Button title="Cancel" variant="secondary" onPress={() => router.back()} />
+          <Button title={fa.common.cancel} variant="secondary" onPress={() => router.back()} />
         </Screen>
       </SafeAreaView>
     );
@@ -68,8 +68,8 @@ export default function RecordScreen() {
       if (video?.uri) {
         router.replace({ pathname: '/visit/[token]/review', params: { token, uri: video.uri } });
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Recording failed.');
+    } catch {
+      setError(fa.visit.recordingFailed);
     } finally {
       setRecording(false);
     }
@@ -93,12 +93,12 @@ export default function RecordScreen() {
         <View style={styles.topBar}>
           {!recording && (
             <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
-              <Text style={styles.overlayText}>Cancel</Text>
+              <Text style={styles.overlayText}>{fa.common.cancel}</Text>
             </Pressable>
           )}
           {recording && (
             <Text accessibilityLiveRegion="polite" style={styles.overlayText}>
-              ● {Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')}
+              ● {toPersianDigits(`${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`)}
             </Text>
           )}
           {!recording && (
@@ -107,14 +107,14 @@ export default function RecordScreen() {
               onPress={() => setFacing((f) => (f === 'front' ? 'back' : 'front'))}
               hitSlop={12}
             >
-              <Text style={styles.overlayText}>Flip</Text>
+              <Text style={styles.overlayText}>{fa.visit.flip}</Text>
             </Pressable>
           )}
         </View>
         <View style={styles.bottomBar}>
           {error && <Text style={styles.errorText}>{error}</Text>}
           <Pressable
-            accessibilityLabel={recording ? 'Stop recording' : 'Start recording'}
+            accessibilityLabel={recording ? fa.visit.stopRecording : fa.visit.startRecording}
             accessibilityRole="button"
             disabled={!ready}
             onPress={() => (recording ? cameraRef.current?.stopRecording() : startRecording())}

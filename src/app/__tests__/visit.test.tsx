@@ -1,8 +1,10 @@
 import { GraphQLError } from 'graphql';
 import { MockedProvider } from '@apollo/client/testing/react';
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
+import { router } from 'expo-router';
 
 import { VISIT_BY_TOKEN, type VisitForTestimony } from '@/graphql/operations';
+import { fa } from '@/i18n/fa';
 
 import VisitScreen from '../visit/[token]/index';
 
@@ -39,20 +41,30 @@ function renderWith(visit: VisitForTestimony | null) {
 describe('VisitScreen', () => {
   it('invites the visitor to record, using the campaign copy', async () => {
     await renderWith(baseVisit);
-    expect(await screen.findByText('How was Cafe Luna?')).toBeOnTheScreen();
+    expect(await screen.findByText(fa.visit.title('Cafe Luna'))).toBeOnTheScreen();
     expect(screen.getByText('Get 10% off your next visit')).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: 'Record now' })).toBeOnTheScreen();
   });
 
+  it('records only after the visitor consents to recording', async () => {
+    await renderWith(baseVisit);
+    const record = await screen.findByRole('button', { name: 'Record now' });
+    expect(record).toBeDisabled();
+
+    await fireEvent.press(screen.getByRole('checkbox', { name: fa.consent.agree }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Record now' }));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/[token]/record', params: { token: 'tok' } });
+  });
+
   it('does not offer recording twice for the same visit', async () => {
     await renderWith({ ...baseVisit, testimonial: { id: '1', status: 'PENDING' } });
-    expect(await screen.findByText('Thanks, Sam!')).toBeOnTheScreen();
+    expect(await screen.findByText(fa.visit.alreadyTitle('Sam'))).toBeOnTheScreen();
     expect(screen.queryByRole('button')).toBeNull();
   });
 
   it('handles unknown visits', async () => {
     await renderWith(null);
-    expect(await screen.findByText('Visit not found')).toBeOnTheScreen();
+    expect(await screen.findByText(fa.visit.notFoundTitle)).toBeOnTheScreen();
   });
 
   it('explains expired links', async () => {
@@ -68,6 +80,6 @@ describe('VisitScreen', () => {
         <VisitScreen />
       </MockedProvider>,
     );
-    expect(await screen.findByText('This link has expired')).toBeOnTheScreen();
+    expect(await screen.findByText(fa.visit.expiredTitle)).toBeOnTheScreen();
   });
 });

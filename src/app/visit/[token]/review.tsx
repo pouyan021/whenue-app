@@ -1,11 +1,14 @@
-import { useApolloClient, useMutation } from '@apollo/client/react';
+import { useApolloClient, useMutation, useQuery } from '@apollo/client/react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { Button, colors, ErrorText, typography } from '@/components/ui';
-import { CREATE_TESTIMONIAL } from '@/graphql/operations';
+import { Button, Card, Checkbox, colors, ErrorText, typography } from '@/components/ui';
+import { CREATE_TESTIMONIAL, VISIT_BY_TOKEN, type ConsentPurpose } from '@/graphql/operations';
+import { fa } from '@/i18n/fa';
+import { consentAnswer, consentText, PUBLISH_PURPOSES } from '@/lib/consents';
+import { errorMessage } from '@/lib/errors';
 import { createFileTransport } from '@/lib/fileTransport';
 import { uploadVideo, videoContentType } from '@/lib/upload';
 import { createUploadApi } from '@/lib/uploadApi';
@@ -20,6 +23,10 @@ export default function ReviewScreen() {
   });
   const [rating, setRating] = useState<number | null>(null);
   const [text, setText] = useState('');
+  // The visit screen already loaded the visit; its venue names the clinic in the consents.
+  const clinic = useQuery(VISIT_BY_TOKEN, { variables: { token } }).data?.visitByToken?.venue.name ?? '';
+  const [publish, setPublish] = useState<ConsentPurpose[]>([]);
+  const [blurFace, setBlurFace] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: 'editing' });
   const [error, setError] = useState<string | null>(null);
   const [createTestimonial] = useMutation(CREATE_TESTIMONIAL);
@@ -49,12 +56,23 @@ export default function ReviewScreen() {
       setPhase({ kind: 'saving' });
       await createTestimonial({
         variables: {
-          input: { visitToken: token, videoId: uploadedVideoId.current, rating, text: text.trim() || null },
+          input: {
+            visitToken: token,
+            videoId: uploadedVideoId.current,
+            rating,
+            text: text.trim() || null,
+            // Recording was agreed to on the visit screen, with this wording, before recording.
+            consents: [
+              consentAnswer('TESTIMONIAL_RECORDING', true, clinic),
+              ...PUBLISH_PURPOSES.map((purpose) => consentAnswer(purpose, publish.includes(purpose), clinic)),
+            ],
+            blurFace,
+          },
         },
       });
       router.replace({ pathname: '/visit/[token]/done', params: { token } });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+      setError(errorMessage(e));
       setPhase({ kind: 'editing' });
     }
   }
@@ -64,12 +82,12 @@ export default function ReviewScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <VideoView player={player} style={styles.video} contentFit="cover" nativeControls />
 
-        <Text style={typography.muted}>How would you rate your visit?</Text>
+        <Text style={typography.muted}>{fa.visit.rating}</Text>
         <View style={styles.stars} accessibilityRole="radiogroup">
           {[1, 2, 3, 4, 5].map((value) => (
             <Pressable
               key={value}
-              accessibilityLabel={`${value} star${value > 1 ? 's' : ''}`}
+              accessibilityLabel={fa.visit.stars(value)}
               accessibilityRole="radio"
               accessibilityState={{ checked: rating === value }}
               disabled={busy}
@@ -82,18 +100,37 @@ export default function ReviewScreen() {
         </View>
 
         <TextInput
-          accessibilityLabel="Add a note (optional)"
+          accessibilityLabel={fa.visit.note}
           editable={!busy}
           multiline
           onChangeText={setText}
-          placeholder="Add a note (optional)"
+          placeholder={fa.visit.note}
           style={styles.note}
           value={text}
         />
 
+        <Card>
+          <Text style={typography.heading}>{fa.visit.publishTitle}</Text>
+          <Text style={typography.muted}>{fa.visit.publishBody}</Text>
+          {PUBLISH_PURPOSES.map((purpose) => (
+            <Checkbox
+              key={purpose}
+              label={fa.consent[purpose]}
+              checked={publish.includes(purpose)}
+              disabled={busy}
+              onChange={(checked) =>
+                setPublish((list) => (checked ? [...list, purpose] : list.filter((p) => p !== purpose)))
+              }
+            >
+              <Text style={typography.muted}>{consentText(purpose, clinic)}</Text>
+            </Checkbox>
+          ))}
+          <Checkbox label={fa.visit.blurFace} checked={blurFace} disabled={busy} onChange={setBlurFace} />
+        </Card>
+
         {error && <ErrorText>{error}</ErrorText>}
         {phase.kind === 'uploading' && (
-          <View accessibilityLabel={`Uploading, ${Math.round(phase.progress * 100)} percent`}>
+          <View accessibilityLabel={fa.visit.uploading(Math.round(phase.progress * 100))}>
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${Math.round(phase.progress * 100)}%` }]} />
             </View>
@@ -101,13 +138,19 @@ export default function ReviewScreen() {
         )}
 
         <Button
-          title={phase.kind === 'uploading' ? 'Uploading…' : phase.kind === 'saving' ? 'Saving…' : 'Submit'}
+          title={
+            phase.kind === 'uploading'
+              ? fa.visit.uploading(Math.round(phase.progress * 100))
+              : phase.kind === 'saving'
+                ? fa.visit.saving
+                : fa.visit.submit
+          }
           loading={phase.kind === 'saving'}
           disabled={busy}
           onPress={submit}
         />
         <Button
-          title="Record again"
+          title={fa.visit.again}
           variant="secondary"
           disabled={busy}
           onPress={() => router.replace({ pathname: '/visit/[token]/record', params: { token } })}
