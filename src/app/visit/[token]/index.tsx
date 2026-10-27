@@ -2,34 +2,32 @@ import { CombinedGraphQLErrors } from '@apollo/client/errors';
 import { useQuery } from '@apollo/client/react';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Text, View } from 'react-native';
 
-import { Button, ErrorText, Screen, typography } from '@/components/ui';
+import { Button, Checkbox, ErrorText, Loading, Screen, ScrollScreen, typography } from '@/components/ui';
 import { VISIT_BY_TOKEN } from '@/graphql/operations';
+import { fa } from '@/i18n/fa';
 import { config } from '@/lib/config';
+import { consentText } from '@/lib/consents';
+import { formatDate } from '@/lib/dates';
 
 export default function VisitScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const { data, loading, error, refetch } = useQuery(VISIT_BY_TOKEN, {
     variables: { token },
   });
+  // Recording needs the person's consent first; review sends it with the testimonial.
+  const [agreed, setAgreed] = useState(false);
 
-  if (loading) {
-    return (
-      <Screen style={{ justifyContent: 'center' }}>
-        <ActivityIndicator />
-      </Screen>
-    );
-  }
+  if (loading) return <Loading />;
 
   // The API rejects an expired or altered token with a GraphQL error
   if (CombinedGraphQLErrors.is(error)) {
     return (
       <Screen>
-        <Text style={typography.title}>This link has expired</Text>
-        <Text style={typography.body}>
-          Links to share a testimony only work for a few days. Ask the venue to send you a new one.
-        </Text>
+        <Text style={typography.title}>{fa.visit.expiredTitle}</Text>
+        <Text style={typography.body}>{fa.visit.expiredBody}</Text>
       </Screen>
     );
   }
@@ -37,8 +35,8 @@ export default function VisitScreen() {
   if (error) {
     return (
       <Screen>
-        <ErrorText>We couldn’t load your visit. Check your connection and try again.</ErrorText>
-        <Button title="Retry" onPress={() => refetch()} />
+        <ErrorText>{fa.visit.loadFailed}</ErrorText>
+        <Button title={fa.common.retry} onPress={() => refetch()} />
       </Screen>
     );
   }
@@ -47,9 +45,9 @@ export default function VisitScreen() {
   if (!visit) {
     return (
       <Screen>
-        <Text style={typography.title}>Visit not found</Text>
-        <Text style={typography.body}>Double-check the link from your message.</Text>
-        <Button title="Back" variant="secondary" onPress={() => router.back()} />
+        <Text style={typography.title}>{fa.visit.notFoundTitle}</Text>
+        <Text style={typography.body}>{fa.visit.notFoundBody}</Text>
+        <Button title={fa.common.back} variant="secondary" onPress={() => router.back()} />
       </Screen>
     );
   }
@@ -57,10 +55,8 @@ export default function VisitScreen() {
   if (visit.testimonial) {
     return (
       <Screen>
-        <Text style={typography.title}>Thanks, {visit.user.name}!</Text>
-        <Text style={typography.body}>
-          You’ve already shared a testimony for {visit.venue.name}.
-        </Text>
+        <Text style={typography.title}>{fa.visit.alreadyTitle(visit.user.name)}</Text>
+        <Text style={typography.body}>{fa.visit.alreadyBody(visit.venue.name)}</Text>
       </Screen>
     );
   }
@@ -68,26 +64,27 @@ export default function VisitScreen() {
   const template = visit.campaign?.notificationTemplate;
 
   return (
-    <Screen>
-      <Text style={typography.title}>How was {visit.venue.name}?</Text>
-      <Text style={typography.body}>
-        Hi {visit.user.name}, record a short video (up to a minute) about your visit on{' '}
-        {new Date(visit.visitDate).toLocaleDateString()}.
-      </Text>
+    <ScrollScreen>
+      <Text style={typography.title}>{fa.visit.title(visit.venue.name)}</Text>
+      <Text style={typography.body}>{fa.visit.intro(visit.user.name, formatDate(visit.visitDate))}</Text>
       {template?.incentive ? (
         <View>
           <Text style={typography.muted}>{template.incentive}</Text>
         </View>
       ) : null}
+      <Checkbox label={fa.consent.agree} checked={agreed} onChange={setAgreed}>
+        <Text style={typography.muted}>{consentText('TESTIMONIAL_RECORDING', visit.venue.name)}</Text>
+      </Checkbox>
       <Button
-        title={template?.callToAction ?? 'Record my testimony'}
+        title={template?.callToAction ?? fa.visit.record}
+        disabled={!agreed}
         onPress={() => router.push({ pathname: '/visit/[token]/record', params: { token } })}
       />
       {__DEV__ && (
         // The iOS Simulator has no camera, so in development a saved video can stand in.
-        <Button title="Pick a saved video (dev)" variant="secondary" onPress={() => pickVideo(token)} />
+        <Button title={fa.visit.pickSaved} variant="secondary" disabled={!agreed} onPress={() => pickVideo(token)} />
       )}
-    </Screen>
+    </ScrollScreen>
   );
 }
 

@@ -30,9 +30,17 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Whenue uses the camera to record your video testimony.",
-          "microphonePermission": "Whenue uses the microphone to record audio with your video testimony.",
+          "cameraPermission": "Whenue برای ضبط ویدیوی تجربه شما از دوربین استفاده می‌کند.",
+          "microphonePermission": "Whenue برای ضبط صدای ویدیوی تجربه شما از میکروفون استفاده می‌کند.",
           "recordAudioAndroid": true
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-localization",
+        {
+          "supportsRTL": true,
+          "forcesRTL": true
         }
       ]
     ],

@@ -9,7 +9,18 @@ import { config } from './config';
  * near the end of a long video doesn't start the whole upload again.
  */
 
-export class UploadError extends Error {}
+export type UploadFailure = 'empty' | 'tooLarge' | 'incomplete' | 'cancelled' | 'failed';
+
+/** Why an upload stopped. The message is for developers; the app shows its own for each reason. */
+export class UploadError extends Error {
+  constructor(
+    readonly reason: UploadFailure,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+  }
+}
 
 /** The part of whenue-api the upload needs. See createUploadApi in uploadApi.ts. */
 export type UploadApi = {
@@ -70,10 +81,10 @@ export async function uploadVideo(
   const size = transport.size;
 
   if (size <= 0) {
-    throw new UploadError('The recording is empty.');
+    throw new UploadError('empty', 'The recording is empty.');
   }
   if (size > config.maxUploadBytes) {
-    throw new UploadError('The video is too large to upload.');
+    throw new UploadError('tooLarge', 'The video is too large to upload.');
   }
 
   const started = await api.start({ contentType: options.contentType, sizeBytes: size });
@@ -119,15 +130,15 @@ export async function uploadVideo(
     throwIfAborted(signal);
     const video = await api.complete(videoId, uploaded);
     if (video.status === 'FAILED') {
-      throw new UploadError('The upload was incomplete. Please try again.');
+      throw new UploadError('incomplete', 'The upload was incomplete. Please try again.');
     }
     return { videoId };
   } catch (error) {
     // Frees the parts in storage; the API ignores an abort of a finished upload anyway.
     api.abort(videoId).catch(() => {});
-    if (signal?.aborted) throw new UploadError('Upload cancelled.');
+    if (signal?.aborted) throw new UploadError('cancelled', 'Upload cancelled.');
     if (error instanceof UploadError) throw error;
-    throw new UploadError('The upload failed. Check your connection and try again.', { cause: error });
+    throw new UploadError('failed', 'The upload failed. Check your connection and try again.', { cause: error });
   }
 }
 
@@ -143,7 +154,7 @@ async function refresh(
 }
 
 function throwIfAborted(signal?: AbortSignal) {
-  if (signal?.aborted) throw new UploadError('Upload cancelled.');
+  if (signal?.aborted) throw new UploadError('cancelled', 'Upload cancelled.');
 }
 
 function backoff(attempt: number): Promise<void> {
