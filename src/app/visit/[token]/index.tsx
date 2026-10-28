@@ -11,6 +11,7 @@ import { fa } from '@/i18n/fa';
 import { config } from '@/lib/config';
 import { consentText } from '@/lib/consents';
 import { formatDate } from '@/lib/dates';
+import { keepRecording } from '@/lib/recordings';
 
 export default function VisitScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -95,6 +96,7 @@ async function pickVideo(token: string) {
   });
   const uri = result.canceled ? undefined : result.assets[0]?.uri;
   if (uri) {
-    router.push({ pathname: '/visit/[token]/review', params: { token, uri } });
+    keepRecording(token, uri);
+    router.push({ pathname: '/visit/[token]/review', params: { token } });
   }
 }

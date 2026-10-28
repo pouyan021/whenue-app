@@ -10,15 +10,18 @@ import { fa } from '@/i18n/fa';
 import { consentAnswer, consentText, PUBLISH_PURPOSES } from '@/lib/consents';
 import { errorMessage } from '@/lib/errors';
 import { createFileTransport } from '@/lib/fileTransport';
+import { forgetRecording, recordingFor } from '@/lib/recordings';
 import { uploadVideo, videoContentType } from '@/lib/upload';
 import { createUploadApi } from '@/lib/uploadApi';
 
 type Phase = { kind: 'editing' } | { kind: 'uploading'; progress: number } | { kind: 'saving' };
 
 export default function ReviewScreen() {
-  const { token, uri } = useLocalSearchParams<{ token: string; uri: string }>();
+  const { token } = useLocalSearchParams<{ token: string }>();
+  // Gone after the app reloads; the person records again
+  const uri = recordingFor(token);
   const client = useApolloClient();
-  const player = useVideoPlayer(uri, (p) => {
+  const player = useVideoPlayer(uri ?? null, (p) => {
     p.loop = true;
   });
   const [rating, setRating] = useState<number | null>(null);
@@ -39,7 +42,20 @@ export default function ReviewScreen() {
 
   const busy = phase.kind !== 'editing';
 
+  if (!uri) {
+    return (
+      <View style={styles.content}>
+        <ErrorText>{fa.visit.recordingLost}</ErrorText>
+        <Button
+          title={fa.visit.again}
+          onPress={() => router.replace({ pathname: '/visit/[token]/record', params: { token } })}
+        />
+      </View>
+    );
+  }
+
   async function submit() {
+    if (!uri) return;
     setError(null);
     try {
       player.pause();
@@ -70,6 +86,7 @@ export default function ReviewScreen() {
           },
         },
       });
+      forgetRecording(token);
       router.replace({ pathname: '/visit/[token]/done', params: { token } });
     } catch (e) {
       setError(errorMessage(e));
