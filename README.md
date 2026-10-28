@@ -77,11 +77,31 @@ npm start
 Go, so you can open the app in Expo Go from `npm start`. For a standalone build, use a
 development build (`npx expo run:ios|android` or EAS).
 
+### One command to the camera (Android emulator)
+
+With the backend up (`tilt up` in whenue-deploy, or `./gradlew bootRun` in whenue-api):
+
+```bash
+npm run android:dev              # opens the record screen
+npm run android:dev -- --visit   # opens the visit screen, as tapping the link would
+```
+
+It boots your Android Studio emulator if none is running (front camera on your webcam),
+runs the `adb reverse` commands below, makes a fresh visit link on the local API, starts
+Metro and opens the link in Expo Go, installing Expo Go the first time. The record screen
+skips the visit screen's consent step, which is fine for trying the camera; use `--visit`
+to go through the whole flow. The script's header lists its settings, such as
+`WHENUE_AVD` to pick an emulator and `WHENUE_FRONT_CAMERA=emulated` without a webcam.
+It needs macOS or Linux (on Windows, use WSL or Git Bash).
+
 ### Getting a visit link
 
-In GraphiQL (http://localhost:8080/graphiql):
+`npm run visit-link` prints a fresh visit token from the local API. The first time, it
+creates a test clinic (`dev-clinic`, with testimonials on) and venue, logging in as
+whenue-deploy's bootstrap admin (`WHENUE_ADMIN_EMAIL` and `WHENUE_ADMIN_PASSWORD` change
+that). To do it by hand in GraphiQL (http://localhost:8080/graphiql):
 1. Log in as the bootstrap admin with `login`, and send the token as `Authorization: Bearer <token>`.
-2. Create a venue, a user and a visit if you have none.
+2. Create a clinic with the testimonials module, a venue and a visit if you have none.
 3. Call `issueVisitToken(visitId: ...)`.
 
 The link is `whenue://visit/<token>`. Paste it on the app's home screen, or open it
@@ -111,6 +131,8 @@ presigned URLs use:
 adb reverse tcp:8080 tcp:8080   # whenue-api
 adb reverse tcp:9000 tcp:9000   # RustFS, the host in presigned upload URLs
 ```
+
+`npm run android:dev` does this for you.
 
 `adb reverse` lasts until the emulator restarts. Re-run it after a restart.
 
@@ -142,12 +164,14 @@ are written to the API's log instead of being texted.
 
 ## Scripts
 
-| Command             | What it does                    |
-| ------------------- | ------------------------------- |
-| `npm start`         | Start the Metro dev server      |
-| `npm run lint`      | ESLint (`eslint-config-expo`)   |
-| `npm run typecheck` | `tsc --noEmit`                  |
-| `npm test`          | Jest (`jest-expo` preset)       |
+| Command               | What it does                                            |
+| --------------------- | ------------------------------------------------------- |
+| `npm start`           | Start the Metro dev server                              |
+| `npm run android:dev` | Emulator, ports, visit link and Metro in one go         |
+| `npm run visit-link`  | Print a fresh visit token from the local API            |
+| `npm run lint`        | ESLint (`eslint-config-expo`)                           |
+| `npm run typecheck`   | `tsc --noEmit`                                          |
+| `npm test`            | Jest (`jest-expo` preset)                               |
 
 ## Project layout
 
