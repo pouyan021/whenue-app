@@ -26,6 +26,13 @@ esac
 die() { echo "error: $*" >&2; exit 1; }
 step() { echo "==> $*"; }
 
+# npm records the installed tree in node_modules/.package-lock.json; a newer package-lock.json
+# means someone added or bumped a package since the last install
+if [[ ! -f node_modules/.package-lock.json || package-lock.json -nt node_modules/.package-lock.json ]]; then
+  step "Installing packages (package-lock.json changed)"
+  npm install
+fi
+
 sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 if [[ -z "$sdk" ]]; then
   for candidate in "$HOME/Library/Android/sdk" "$HOME/Android/Sdk"; do
