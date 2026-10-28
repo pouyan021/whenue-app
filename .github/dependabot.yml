@@ -21,6 +21,13 @@ updates:
       - dependency-name: "react-native"
       - dependency-name: "react-native-*"
       - dependency-name: "@types/react"
+      # Lint and typecheck tooling waits on upstream support:
+      # eslint-plugin-react (via eslint-config-expo) does not run on ESLint 10,
+      # and typescript-eslint does not support TypeScript 7 yet.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       expo:
         patterns:
