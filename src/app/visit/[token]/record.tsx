@@ -1,4 +1,5 @@
 import { CameraView, useCameraPermissions, useMicrophonePermissions, type CameraType } from 'expo-camera';
+import { File } from 'expo-file-system';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -65,9 +66,14 @@ export default function RecordScreen() {
         maxDuration: config.maxRecordingSeconds,
         maxFileSize: config.maxUploadBytes,
       });
-      if (video?.uri) {
-        router.replace({ pathname: '/visit/[token]/review', params: { token, uri: video.uri } });
+      if (!video?.uri) return;
+      // expo-camera resolves even when the camera stopped sending frames (CameraX
+      // ERROR_SOURCE_INACTIVE), leaving an empty file. Say so here rather than at upload.
+      if (!(new File(video.uri).size ?? 0)) {
+        setError(fa.visit.recordingEmpty);
+        return;
       }
+      router.replace({ pathname: '/visit/[token]/review', params: { token, uri: video.uri } });
     } catch {
       setError(fa.visit.recordingFailed);
     } finally {
