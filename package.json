@@ -40,6 +40,8 @@
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
+    "android:dev": "bash scripts/android-dev.sh",
+    "visit-link": "node scripts/dev-visit-link.mjs",
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
