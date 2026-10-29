@@ -147,6 +147,7 @@ export const fa = {
     startRecording: 'شروع ضبط',
     stopRecording: 'پایان ضبط',
     recordingFailed: 'ضبط ناموفق بود.',
+    recordingLost: 'ویدیو پیدا نشد. لطفاً دوباره ضبط کنید.',
     recordingEmpty: 'ویدیو ضبط نشد. دوباره امتحان کنید یا دوربین دیگر را انتخاب کنید.',
     reviewTitle: 'بازبینی',
     rating: 'به مراجعه‌تان چه امتیازی می‌دهید؟',

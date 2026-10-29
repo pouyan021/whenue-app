@@ -9,6 +9,7 @@ import { Button, ErrorText, Screen, typography } from '@/components/ui';
 import { fa } from '@/i18n/fa';
 import { config } from '@/lib/config';
 import { toPersianDigits } from '@/lib/numbers';
+import { keepRecording } from '@/lib/recordings';
 
 export default function RecordScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -73,7 +74,8 @@ export default function RecordScreen() {
         setError(fa.visit.recordingEmpty);
         return;
       }
-      router.replace({ pathname: '/visit/[token]/review', params: { token, uri: video.uri } });
+      keepRecording(token, video.uri);
+      router.replace({ pathname: '/visit/[token]/review', params: { token } });
     } catch {
       setError(fa.visit.recordingFailed);
     } finally {
