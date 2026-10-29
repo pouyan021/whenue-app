@@ -53,7 +53,8 @@ if [[ -z "$serial" ]]; then
   [[ -n "$avd" ]] || die "No virtual device yet. Create one in Android Studio's Device Manager."
   step "Booting emulator $avd"
   mkdir -p .expo
-  nohup "$emulator" -avd "$avd" -camera-front "${WHENUE_FRONT_CAMERA:-webcam0}" -camera-back virtualscene \
+  # -allow-host-audio: the emulator records silence from your microphone without it
+  nohup "$emulator" -avd "$avd" -camera-front "${WHENUE_FRONT_CAMERA:-webcam0}" -camera-back virtualscene -allow-host-audio \
     > .expo/emulator.log 2>&1 &
   for _ in $(seq 1 60); do
     serial="$(running_emulator)"
