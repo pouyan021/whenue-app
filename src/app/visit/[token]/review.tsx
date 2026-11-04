@@ -9,6 +9,7 @@ import { CREATE_TESTIMONIAL, VISIT_BY_TOKEN, type ConsentPurpose } from '@/graph
 import { fa } from '@/i18n/fa';
 import { consentAnswer, consentText, PUBLISH_PURPOSES } from '@/lib/consents';
 import { errorMessage } from '@/lib/errors';
+import { forgetBrowserVideo } from '@/lib/browserVideos';
 import { createFileTransport } from '@/lib/fileTransport';
 import { forgetRecording, recordingFor } from '@/lib/recordings';
 import { uploadVideo, videoContentType } from '@/lib/upload';
@@ -87,6 +88,7 @@ export default function ReviewScreen() {
         },
       });
       forgetRecording(token);
+      forgetBrowserVideo(uri);
       router.replace({ pathname: '/visit/[token]/done', params: { token } });
     } catch (e) {
       setError(errorMessage(e));

@@ -11,6 +11,7 @@ import { fa } from '@/i18n/fa';
 import { config } from '@/lib/config';
 import { consentText } from '@/lib/consents';
 import { formatDate } from '@/lib/dates';
+import { keepBrowserVideo } from '@/lib/browserVideos';
 import { keepRecording } from '@/lib/recordings';
 
 export default function VisitScreen() {
@@ -94,7 +95,9 @@ async function pickVideo(token: string) {
     mediaTypes: ['videos'],
     videoMaxDuration: config.maxRecordingSeconds,
   });
-  const uri = result.canceled ? undefined : result.assets[0]?.uri;
+  const asset = result.canceled ? undefined : result.assets[0];
+  // In a browser the picker hands over a File, which the upload reads through its object URL
+  const uri = asset?.file ? keepBrowserVideo(asset.file) : asset?.uri;
   if (uri) {
     keepRecording(token, uri);
     router.push({ pathname: '/visit/[token]/review', params: { token } });

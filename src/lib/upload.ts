@@ -1,5 +1,6 @@
 import type { VideoStatus, VideoUploadPart } from '@/graphql/operations';
 
+import { browserVideo, browserVideoType } from './browserVideos';
 import { config } from './config';
 
 /**
@@ -161,8 +162,13 @@ function backoff(attempt: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** (attempt - 1)));
 }
 
-/** The content type whenue-api expects for a recording, from its file extension. */
+/**
+ * The content type whenue-api expects for a recording: a browser recording's own type, or
+ * else one from the file extension.
+ */
 export function videoContentType(fileUri: string): string {
+  const recorded = browserVideo(fileUri);
+  if (recorded) return browserVideoType(recorded);
   const extension = fileUri.split('?')[0].split('.').pop()?.toLowerCase();
   return extension === 'mov' ? 'video/quicktime' : 'video/mp4';
 }
