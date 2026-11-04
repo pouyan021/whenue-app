@@ -12,11 +12,15 @@ import { keepRecording } from '@/lib/recordings';
 /**
  * Recording in a phone browser, for visitors who open the visit link without the app: the
  * camera through getUserMedia and the file through MediaRecorder. iPhone Safari records MP4,
- * Chrome MP4 or WebM, Firefox WebM; whenue-api takes all three.
+ * Chrome and Firefox WebM; whenue-api takes both.
  */
 
-// Most compatible first; vidEngine turns any of them into the same 720p MP4
-const MIME_TYPES = ['video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+// vidEngine turns any of them into the same 720p MP4. Apple browsers record MP4 best. Chrome on
+// Android can crash the whole tab ("Aw, Snap") in its hardware MP4 encoder, so everywhere else
+// VP8 WebM, a software encoder that every Chromium and Firefox build ships, goes first.
+const MP4_TYPES = ['video/mp4;codecs=avc1,mp4a', 'video/mp4'];
+const WEBM_TYPES = ['video/webm;codecs=vp8,opus', 'video/webm'];
+const MIME_TYPES = prefersMp4() ? [...MP4_TYPES, ...WEBM_TYPES] : [...WEBM_TYPES, ...MP4_TYPES];
 // About 19 MB for a full minute: plenty for 720p and quick to upload on mobile data
 const BITS_PER_SECOND = 2_500_000;
 
@@ -230,6 +234,13 @@ function startRecorder(stream: MediaStream, onData: (event: BlobEvent) => void):
     }
   }
   throw lastError;
+}
+
+/** iPhone and iPad browsers are all WebKit, as is Safari on a Mac. */
+function prefersMp4(): boolean {
+  if (typeof navigator === 'undefined') return true;
+  const agent = navigator.userAgent;
+  return /iPhone|iPad|iPod/.test(agent) || (/Safari\//.test(agent) && !/Chrome|Chromium|Android|Firefox/.test(agent));
 }
 
 function describe(error: unknown): string {
