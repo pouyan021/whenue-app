@@ -35,6 +35,8 @@ export default function RecordScreen() {
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [problem, setProblem] = useState<Problem | null>(null);
+  // The browser's own error, shown small under ours so a failure on a real phone can be reported
+  const [detail, setDetail] = useState<string | null>(null);
 
   // Also false on plain http, where browsers hide the camera
   const supported =
@@ -55,13 +57,19 @@ export default function RecordScreen() {
           return;
         }
         streamRef.current = stream;
-        if (videoRef.current) videoRef.current.srcObject = stream;
+        const preview = videoRef.current;
+        if (preview) {
+          preview.srcObject = stream;
+          // iOS Safari can leave a stream preview paused despite autoPlay
+          preview.play().catch(() => {});
+        }
         setProblem(null);
         setStreaming(facing);
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         const name = error instanceof DOMException ? error.name : '';
+        setDetail(describe(error));
         setProblem(name === 'NotAllowedError' || name === 'SecurityError' ? 'denied' : 'failed');
       });
     return () => {
@@ -90,17 +98,23 @@ export default function RecordScreen() {
   function startRecording() {
     const stream = streamRef.current;
     if (!stream) return;
-    const mimeType = MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type));
+    setDetail(null);
+    const chunks: Blob[] = [];
     let recorder: MediaRecorder;
     try {
-      recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: BITS_PER_SECOND });
-    } catch {
+      // Hand over data every second, so a long recording isn't one big buffer at the end
+      recorder = startRecorder(stream, (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      });
+    } catch (error) {
+      setDetail(describe(error));
       setProblem('failed');
       return;
     }
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) chunks.push(event.data);
+    const mimeType = recorder.mimeType;
+    recorder.onerror = (event) => {
+      setDetail(describe((event as Event & { error?: unknown }).error ?? event.type));
+      setProblem('failed');
     };
     recorder.onstop = () => {
       setRecording(false);
@@ -119,8 +133,6 @@ export default function RecordScreen() {
     recorderRef.current = recorder;
     setProblem(null);
     setElapsed(0);
-    // Hand over data every second, so a long recording isn't one big buffer at the end
-    recorder.start(1000);
     setRecording(true);
   }
 
@@ -176,6 +188,7 @@ export default function RecordScreen() {
         </View>
         <View style={styles.bottomBar}>
           {message && <Text style={styles.errorText}>{message}</Text>}
+          {message && detail && <Text style={styles.detailText}>{detail}</Text>}
           <Pressable
             accessibilityLabel={recording ? fa.visit.stopRecording : fa.visit.startRecording}
             accessibilityRole="button"
@@ -189,6 +202,39 @@ export default function RecordScreen() {
       </View>
     </View>
   );
+}
+
+/**
+ * Starts recording in the first format the browser both claims and actually accepts. Some
+ * browsers report support for a type and then refuse it in the constructor or in start(), so
+ * each candidate is tried for real, and last of all the browser's own default.
+ */
+function startRecorder(stream: MediaStream, onData: (event: BlobEvent) => void): MediaRecorder {
+  const candidates: (MediaRecorderOptions | undefined)[] = [
+    ...MIME_TYPES.filter((type) => MediaRecorder.isTypeSupported(type)).map((mimeType) => ({
+      mimeType,
+      videoBitsPerSecond: BITS_PER_SECOND,
+    })),
+    { videoBitsPerSecond: BITS_PER_SECOND },
+    undefined,
+  ];
+  let lastError: unknown;
+  for (const options of candidates) {
+    try {
+      const recorder = new MediaRecorder(stream, options);
+      recorder.ondataavailable = onData;
+      recorder.start(1000);
+      return recorder;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+function describe(error: unknown): string {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  return String(error);
 }
 
 function stopTracks(stream: MediaStream) {
@@ -211,6 +257,7 @@ const styles = StyleSheet.create({
   bottomBar: { alignItems: 'center', paddingBottom: 32, gap: 12 },
   overlayText: { color: '#fff', fontSize: 17, fontWeight: '600' },
   errorText: { color: '#FCA5A5', fontSize: 14, paddingHorizontal: 20, textAlign: 'center' },
+  detailText: { color: '#D1D5DB', fontSize: 11, paddingHorizontal: 20, textAlign: 'center', writingDirection: 'ltr' },
   shutter: {
     width: 76,
     height: 76,
