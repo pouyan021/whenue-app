@@ -1,34 +1,40 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { Button, ErrorText, Screen, typography } from '@/components/ui';
-import { fa } from '@/i18n/fa';
-import { keepBrowserVideo } from '@/lib/browserVideos';
-import { config } from '@/lib/config';
-import { toPersianDigits } from '@/lib/numbers';
-import { keepRecording } from '@/lib/recordings';
+import { Button, ErrorText, Screen, typography } from "@/components/ui";
+import { fa } from "@/i18n/fa";
+import { keepBrowserVideo } from "@/lib/browserVideos";
+import { config } from "@/lib/config";
+import { toPersianDigits } from "@/lib/numbers";
+import { keepRecording } from "@/lib/recordings";
 
 /**
  * Recording in a phone browser, for visitors who open the visit link without the app: the
  * camera through getUserMedia and the file through MediaRecorder. iPhone Safari records MP4,
- * Chrome MP4 or WebM, Firefox WebM; whenue-api takes all three.
+ * Chrome and Firefox WebM; whenue-api takes both.
  */
 
-// Most compatible first; vidEngine turns any of them into the same 720p MP4
-const MIME_TYPES = ['video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+// vidEngine turns any of them into the same 720p MP4. Apple browsers record MP4 best. Chrome on
+// Android can crash the whole tab ("Aw, Snap") in its hardware MP4 encoder, so everywhere else
+// VP8 WebM, a software encoder that every Chromium and Firefox build ships, goes first.
+const MP4_TYPES = ["video/mp4;codecs=avc1,mp4a", "video/mp4"];
+const WEBM_TYPES = ["video/webm;codecs=vp8,opus", "video/webm"];
+const MIME_TYPES = prefersMp4()
+  ? [...MP4_TYPES, ...WEBM_TYPES]
+  : [...WEBM_TYPES, ...MP4_TYPES];
 // About 19 MB for a full minute: plenty for 720p and quick to upload on mobile data
 const BITS_PER_SECOND = 2_500_000;
 
-type Facing = 'user' | 'environment';
-type Problem = 'denied' | 'failed' | 'empty' | 'tooLarge';
+type Facing = "user" | "environment";
+type Problem = "denied" | "failed" | "empty" | "tooLarge";
 
 export default function RecordScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
-  const [facing, setFacing] = useState<Facing>('user');
+  const [facing, setFacing] = useState<Facing>("user");
   // Which camera is showing; ready once it is the one asked for
   const [streaming, setStreaming] = useState<Facing | null>(null);
   const ready = streaming === facing;
@@ -40,7 +46,9 @@ export default function RecordScreen() {
 
   // Also false on plain http, where browsers hide the camera
   const supported =
-    typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined';
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices?.getUserMedia &&
+    typeof MediaRecorder !== "undefined";
 
   // Opens the camera, again whenever the person flips it, and closes it on leaving
   useEffect(() => {
@@ -48,7 +56,11 @@ export default function RecordScreen() {
     let cancelled = false;
     navigator.mediaDevices
       .getUserMedia({
-        video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          facingMode: facing,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: true,
       })
       .then((stream) => {
@@ -68,13 +80,17 @@ export default function RecordScreen() {
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        const name = error instanceof DOMException ? error.name : '';
+        const name = error instanceof DOMException ? error.name : "";
         setDetail(describe(error));
-        setProblem(name === 'NotAllowedError' || name === 'SecurityError' ? 'denied' : 'failed');
+        setProblem(
+          name === "NotAllowedError" || name === "SecurityError"
+            ? "denied"
+            : "failed",
+        );
       });
     return () => {
       cancelled = true;
-      if (recorderRef.current?.state === 'recording') {
+      if (recorderRef.current?.state === "recording") {
         recorderRef.current.ondataavailable = null;
         recorderRef.current.onstop = null;
         recorderRef.current.stop();
@@ -92,7 +108,8 @@ export default function RecordScreen() {
 
   // Stops at the length limit, like the app's camera does
   useEffect(() => {
-    if (recording && elapsed >= config.maxRecordingSeconds) recorderRef.current?.stop();
+    if (recording && elapsed >= config.maxRecordingSeconds)
+      recorderRef.current?.stop();
   }, [recording, elapsed]);
 
   function startRecording() {
@@ -108,27 +125,31 @@ export default function RecordScreen() {
       });
     } catch (error) {
       setDetail(describe(error));
-      setProblem('failed');
+      setProblem("failed");
       return;
     }
     const mimeType = recorder.mimeType;
     recorder.onerror = (event) => {
-      setDetail(describe((event as Event & { error?: unknown }).error ?? event.type));
-      setProblem('failed');
+      setDetail(
+        describe((event as Event & { error?: unknown }).error ?? event.type),
+      );
+      setProblem("failed");
     };
     recorder.onstop = () => {
       setRecording(false);
-      const video = new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/mp4' });
+      const video = new Blob(chunks, {
+        type: recorder.mimeType || mimeType || "video/mp4",
+      });
       if (video.size === 0) {
-        setProblem('empty');
+        setProblem("empty");
         return;
       }
       if (video.size > config.maxUploadBytes) {
-        setProblem('tooLarge');
+        setProblem("tooLarge");
         return;
       }
       keepRecording(token, keepBrowserVideo(video));
-      router.replace({ pathname: '/visit/[token]/review', params: { token } });
+      router.replace({ pathname: "/visit/[token]/review", params: { token } });
     };
     recorderRef.current = recorder;
     setProblem(null);
@@ -136,21 +157,29 @@ export default function RecordScreen() {
     setRecording(true);
   }
 
-  if (problem === 'denied' || !supported) {
+  if (problem === "denied" || !supported) {
     return (
       <Screen>
         <Text style={typography.title}>{fa.visit.cameraTitle}</Text>
-        <ErrorText>{problem === 'denied' ? fa.visit.browserDenied : fa.visit.browserUnsupported}</ErrorText>
-        <Button title={fa.common.cancel} variant="secondary" onPress={() => router.back()} />
+        <ErrorText>
+          {problem === "denied"
+            ? fa.visit.browserDenied
+            : fa.visit.browserUnsupported}
+        </ErrorText>
+        <Button
+          title={fa.common.cancel}
+          variant="secondary"
+          onPress={() => router.back()}
+        />
       </Screen>
     );
   }
 
   const remaining = Math.max(0, config.maxRecordingSeconds - elapsed);
   const message =
-    problem === 'empty'
+    problem === "empty"
       ? fa.visit.recordingEmpty
-      : problem === 'failed' || problem === 'tooLarge'
+      : problem === "failed" || problem === "tooLarge"
         ? fa.visit.recordingFailed
         : null;
 
@@ -162,24 +191,36 @@ export default function RecordScreen() {
         muted
         playsInline
         // A selfie preview reads naturally mirrored; the recording itself is not
-        style={{ ...previewStyle, transform: facing === 'user' ? 'scaleX(-1)' : undefined }}
+        style={{
+          ...previewStyle,
+          transform: facing === "user" ? "scaleX(-1)" : undefined,
+        }}
       />
       <View style={styles.overlay}>
         <View style={styles.topBar}>
           {!recording && (
-            <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.back()}
+              hitSlop={12}
+            >
               <Text style={styles.overlayText}>{fa.common.cancel}</Text>
             </Pressable>
           )}
           {recording && (
             <Text accessibilityLiveRegion="polite" style={styles.overlayText}>
-              ● {toPersianDigits(`${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`)}
+              ●{" "}
+              {toPersianDigits(
+                `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`,
+              )}
             </Text>
           )}
           {!recording && (
             <Pressable
               accessibilityRole="button"
-              onPress={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}
+              onPress={() =>
+                setFacing((f) => (f === "user" ? "environment" : "user"))
+              }
               hitSlop={12}
             >
               <Text style={styles.overlayText}>{fa.visit.flip}</Text>
@@ -190,13 +231,19 @@ export default function RecordScreen() {
           {message && <Text style={styles.errorText}>{message}</Text>}
           {message && detail && <Text style={styles.detailText}>{detail}</Text>}
           <Pressable
-            accessibilityLabel={recording ? fa.visit.stopRecording : fa.visit.startRecording}
+            accessibilityLabel={
+              recording ? fa.visit.stopRecording : fa.visit.startRecording
+            }
             accessibilityRole="button"
             disabled={!ready}
-            onPress={() => (recording ? recorderRef.current?.stop() : startRecording())}
+            onPress={() =>
+              recording ? recorderRef.current?.stop() : startRecording()
+            }
             style={[styles.shutter, !ready && { opacity: 0.4 }]}
           >
-            <View style={recording ? styles.shutterStop : styles.shutterRecord} />
+            <View
+              style={recording ? styles.shutterStop : styles.shutterRecord}
+            />
           </Pressable>
         </View>
       </View>
@@ -209,12 +256,17 @@ export default function RecordScreen() {
  * browsers report support for a type and then refuse it in the constructor or in start(), so
  * each candidate is tried for real, and last of all the browser's own default.
  */
-function startRecorder(stream: MediaStream, onData: (event: BlobEvent) => void): MediaRecorder {
+function startRecorder(
+  stream: MediaStream,
+  onData: (event: BlobEvent) => void,
+): MediaRecorder {
   const candidates: (MediaRecorderOptions | undefined)[] = [
-    ...MIME_TYPES.filter((type) => MediaRecorder.isTypeSupported(type)).map((mimeType) => ({
-      mimeType,
-      videoBitsPerSecond: BITS_PER_SECOND,
-    })),
+    ...MIME_TYPES.filter((type) => MediaRecorder.isTypeSupported(type)).map(
+      (mimeType) => ({
+        mimeType,
+        videoBitsPerSecond: BITS_PER_SECOND,
+      }),
+    ),
     { videoBitsPerSecond: BITS_PER_SECOND },
     undefined,
   ];
@@ -232,6 +284,16 @@ function startRecorder(stream: MediaStream, onData: (event: BlobEvent) => void):
   throw lastError;
 }
 
+/** iPhone and iPad browsers are all WebKit, as is Safari on a Mac. */
+function prefersMp4(): boolean {
+  if (typeof navigator === "undefined") return true;
+  const agent = navigator.userAgent;
+  return (
+    /iPhone|iPad|iPod/.test(agent) ||
+    (/Safari\//.test(agent) && !/Chrome|Chromium|Android|Firefox/.test(agent))
+  );
+}
+
 function describe(error: unknown): string {
   if (error instanceof Error) return `${error.name}: ${error.message}`;
   return String(error);
@@ -242,31 +304,56 @@ function stopTracks(stream: MediaStream) {
 }
 
 const previewStyle = {
-  position: 'absolute',
+  position: "absolute",
   inset: 0,
-  width: '100%',
-  height: '100%',
-  objectFit: 'cover',
-  backgroundColor: '#000',
+  width: "100%",
+  height: "100%",
+  objectFit: "cover",
+  backgroundColor: "#000",
 } as const;
 
 const styles = StyleSheet.create({
-  camera: { flex: 1, backgroundColor: '#000' },
-  overlay: { flex: 1, justifyContent: 'space-between' },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', padding: 20 },
-  bottomBar: { alignItems: 'center', paddingBottom: 32, gap: 12 },
-  overlayText: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  errorText: { color: '#FCA5A5', fontSize: 14, paddingHorizontal: 20, textAlign: 'center' },
-  detailText: { color: '#D1D5DB', fontSize: 11, paddingHorizontal: 20, textAlign: 'center', writingDirection: 'ltr' },
+  camera: { flex: 1, backgroundColor: "#000" },
+  overlay: { flex: 1, justifyContent: "space-between" },
+  topBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: 20,
+  },
+  bottomBar: { alignItems: "center", paddingBottom: 32, gap: 12 },
+  overlayText: { color: "#fff", fontSize: 17, fontWeight: "600" },
+  errorText: {
+    color: "#FCA5A5",
+    fontSize: 14,
+    paddingHorizontal: 20,
+    textAlign: "center",
+  },
+  detailText: {
+    color: "#D1D5DB",
+    fontSize: 11,
+    paddingHorizontal: 20,
+    textAlign: "center",
+    writingDirection: "ltr",
+  },
   shutter: {
     width: 76,
     height: 76,
     borderRadius: 38,
     borderWidth: 4,
-    borderColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  shutterRecord: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#EF4444' },
-  shutterStop: { width: 28, height: 28, borderRadius: 4, backgroundColor: '#EF4444' },
+  shutterRecord: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: "#EF4444",
+  },
+  shutterStop: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    backgroundColor: "#EF4444",
+  },
 });
