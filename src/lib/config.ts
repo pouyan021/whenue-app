@@ -6,4 +6,6 @@ export const config = {
   maxUploadBytes: 500 * 1024 * 1024,
   // Tries per part before the upload gives up, with a growing pause between them.
   partAttempts: 4,
+  // A part PUT that sends nothing and gets no answer for this long is given up and retried.
+  partStallMs: 30_000,
 };
